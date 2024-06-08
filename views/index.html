@@ -1,0 +1,24 @@
+{{ block "index" . }}
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://unpkg.com/htmx.org@1.9.12"
+    integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2" crossorigin="anonymous">
+    </script>
+  <link rel="stylesheet" href="/css/gallery.css">
+  <title>TEST HTMX</title>
+</head>
+
+<body>
+  <div hx-get="/get-gallery" hx-target="#gallery-container" hx-trigger="load" hx-swap="innerHTML">
+    <h1>Image Gallery</h1>
+
+    <div id="gallery-container"></div>
+  </div>
+</body>
+
+</html>
+{{ end }}

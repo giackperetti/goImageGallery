@@ -1,0 +1,13 @@
+{{ block "gallery" . }}
+
+<head>
+  <link rel="stylesheet" href="/css/gallery.css">
+</head>
+
+<div>
+  <p>Number of images: {{ .ImagesNumber }}</p>
+  {{ range .ImagesPaths }}
+  <img src="{{ . }}" class="image">
+  {{ end }}
+</div>
+{{ end }}
