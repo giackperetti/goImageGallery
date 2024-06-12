@@ -5,17 +5,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://unpkg.com/htmx.org@1.9.12"
-    integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2" crossorigin="anonymous">
-    </script>
   <link rel="stylesheet" href="/css/gallery.css">
-  <title>TEST HTMX</title>
+  <link rel="shortcut icon" href="/static/favicon.ico" type="image/x-icon">
+  <title>Frieren Image Gallery</title>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      fetch('/get-gallery')
+        .then(response => response.text())
+        .then(html => {
+          document.getElementById('gallery-container').innerHTML = html;
+        })
+        .catch(error => console.warn('Error fetching gallery:', error));
+    });
+  </script>
 </head>
 
 <body>
-  <div hx-get="/get-gallery" hx-target="#gallery-container" hx-trigger="load" hx-swap="innerHTML">
+  <div>
     <h1>Image Gallery</h1>
-
     <div id="gallery-container"></div>
   </div>
 </body>
