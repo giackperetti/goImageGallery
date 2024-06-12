@@ -1,14 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"html/template"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 	"golang.org/x/time/rate"
 )
 
@@ -21,7 +20,7 @@ type ImageGallery struct {
 	ImagesNumber int
 }
 
-func (t *Template) Render(w io.Writer, name string, data interface{}, c echo.Context) error {
+func (t *Template) Render(w io.Writer, name string, data interface{}) error {
 	return t.Templates.ExecuteTemplate(w, name, data)
 }
 
@@ -30,19 +29,23 @@ func (i *ImageGallery) addImage(path string) {
 	i.ImagesNumber++
 }
 
-func newTemplate(templates *template.Template) echo.Renderer {
+func newTemplate(templates *template.Template) *Template {
 	return &Template{
 		Templates: templates,
 	}
 }
 
-func NewTemplateRenderer(e *echo.Echo, paths ...string) {
-	tmpl := template.New("templates")
-	for i := range paths {
-		template.Must(tmpl.ParseGlob(paths[i]))
+var templates *Template
+
+func NewTemplateRenderer(paths ...string) *Template {
+	if templates == nil {
+		tmpl := template.New("templates")
+		for _, p := range paths {
+			template.Must(tmpl.ParseGlob(p))
+		}
+		templates = newTemplate(tmpl)
 	}
-	t := newTemplate(tmpl)
-	e.Renderer = t
+	return templates
 }
 
 func loadImagesFromDirectory(directory string) ([]string, error) {
@@ -59,37 +62,53 @@ func loadImagesFromDirectory(directory string) ([]string, error) {
 	return images, err
 }
 
-func main() {
-	e := echo.New()
+func logRequest(r *http.Request) {
+	fmt.Printf("Request: %s %s\n", r.Method, r.URL.Path)
+}
 
-	e.Pre(middleware.RemoveTrailingSlash())
-	e.Use(middleware.Recover())
-	e.Use(middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(
-		rate.Limit(20),
-	)))
+func indexHandler(w http.ResponseWriter, r *http.Request) {
+	logRequest(r)
+	templates.Render(w, "index.html", nil)
+}
 
+func galleryHandler(w http.ResponseWriter, r *http.Request) {
+	logRequest(r)
 	gallery := ImageGallery{}
-
-	images, err := loadImagesFromDirectory("static")
+	images, err := loadImagesFromDirectory("static/gallery")
 	if err != nil {
-		e.Logger.Fatal(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-
 	for _, img := range images {
 		gallery.addImage(img)
 	}
+	templates.Render(w, "gallery.html", gallery)
+}
 
-	NewTemplateRenderer(e, "views/*.html")
-	e.Static("/static", "static")
-	e.Static("/css", "css")
-
-	e.GET("/", func(c echo.Context) error {
-		return c.Render(http.StatusOK, "index", nil)
+func serveStaticFolders(mux *http.ServeMux) {
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+	mux.HandleFunc("/css/", func(w http.ResponseWriter, r *http.Request) {
+		logRequest(r)
+		http.ServeFile(w, r, r.URL.Path[1:])
 	})
+}
 
-	e.GET("/get-gallery", func(c echo.Context) error {
-		return c.Render(http.StatusOK, "gallery", gallery)
-	})
+func main() {
+	mux := http.NewServeMux()
 
-	e.Logger.Fatal(e.Start(":12345"))
+	NewTemplateRenderer("views/*.html")
+	mux.HandleFunc("/", indexHandler)
+	mux.HandleFunc("/get-gallery", galleryHandler)
+	serveStaticFolders(mux)
+
+	limiter := rate.NewLimiter(50, 1)
+
+	fmt.Println("Server Started!")
+	http.ListenAndServe(":12345", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !limiter.Allow() {
+			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	}))
 }
