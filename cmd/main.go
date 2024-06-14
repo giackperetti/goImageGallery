@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"io/fs"
 	"net/http"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -32,6 +32,31 @@ func (i *ImageGallery) addImage(path string) {
 	i.ImageNumber++
 }
 
+func (i *ImageGallery) addMultipleImages(directory string) error {
+	var images []string
+
+	walkDirFunc := func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			images = append(images, path)
+		}
+		return nil
+	}
+
+	err := filepath.WalkDir(directory, walkDirFunc)
+	if err != nil {
+		return err
+	}
+
+	for _, img := range images {
+		i.addImage(img)
+	}
+
+	return err
+}
+
 func newTemplate(templates *template.Template) echo.Renderer {
 	return &Template{
 		Templates: templates,
@@ -45,20 +70,6 @@ func NewTemplateRenderer(e *echo.Echo, paths ...string) {
 	}
 	t := newTemplate(tmpl)
 	e.Renderer = t
-}
-
-func loadImagesFromDirectory(directory string) ([]string, error) {
-	var images []string
-	err := filepath.Walk(directory, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() {
-			images = append(images, directory+filepath.Base(path))
-		}
-		return nil
-	})
-	return images, err
 }
 
 func loggingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
@@ -89,15 +100,7 @@ func main() {
 	e.Use(loggingMiddleware)
 
 	gallery := ImageGallery{}
-
-	images, err := loadImagesFromDirectory("static/gallery/")
-	if err != nil {
-		e.Logger.Fatal(err)
-	}
-
-	for _, img := range images {
-		gallery.addImage(img)
-	}
+	gallery.addMultipleImages("static/gallery/")
 
 	NewTemplateRenderer(e, "views/*.html")
 	e.Static("/static", "static")
