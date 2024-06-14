@@ -5,8 +5,8 @@
 </head>
 
 <div>
-  <p>Number of images: {{ .ImagesNumber }}</p>
-  {{ range .ImagesPaths }}
+  <p>Number of images: {{ .ImageNumber }}</p>
+  {{ range .ImagePaths }}
   <img src="{{ . }}" class="image">
   {{ end }}
 </div>
