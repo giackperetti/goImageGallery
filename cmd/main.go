@@ -7,7 +7,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"golang.org/x/time/rate"
 )
 
@@ -16,36 +19,32 @@ type Template struct {
 }
 
 type ImageGallery struct {
-	ImagesPaths  []string
-	ImagesNumber int
+	ImagePaths  []string
+	ImageNumber int
 }
 
-func (t *Template) Render(w io.Writer, name string, data interface{}) error {
+func (t *Template) Render(w io.Writer, name string, data interface{}, c echo.Context) error {
 	return t.Templates.ExecuteTemplate(w, name, data)
 }
 
 func (i *ImageGallery) addImage(path string) {
-	i.ImagesPaths = append(i.ImagesPaths, path)
-	i.ImagesNumber++
+	i.ImagePaths = append(i.ImagePaths, path)
+	i.ImageNumber++
 }
 
-func newTemplate(templates *template.Template) *Template {
+func newTemplate(templates *template.Template) echo.Renderer {
 	return &Template{
 		Templates: templates,
 	}
 }
 
-var templates *Template
-
-func NewTemplateRenderer(paths ...string) *Template {
-	if templates == nil {
-		tmpl := template.New("templates")
-		for _, p := range paths {
-			template.Must(tmpl.ParseGlob(p))
-		}
-		templates = newTemplate(tmpl)
+func NewTemplateRenderer(e *echo.Echo, paths ...string) {
+	tmpl := template.New("templates")
+	for i := range paths {
+		template.Must(tmpl.ParseGlob(paths[i]))
 	}
-	return templates
+	t := newTemplate(tmpl)
+	e.Renderer = t
 }
 
 func loadImagesFromDirectory(directory string) ([]string, error) {
@@ -55,60 +54,62 @@ func loadImagesFromDirectory(directory string) ([]string, error) {
 			return err
 		}
 		if !info.IsDir() {
-			images = append(images, "/static/"+info.Name())
+			images = append(images, directory+filepath.Base(path))
 		}
 		return nil
 	})
 	return images, err
 }
 
-func logRequest(r *http.Request) {
-	fmt.Printf("Request: %s %s\n", r.Method, r.URL.Path)
-}
+func loggingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		start := time.Now()
+		err := next(c)
 
-func indexHandler(w http.ResponseWriter, r *http.Request) {
-	logRequest(r)
-	templates.Render(w, "index.html", nil)
-}
+		logMessage := fmt.Sprintf("[%s] %s %s %v",
+			c.Request().Method,
+			c.Path(),
+			c.QueryString(),
+			time.Since(start),
+		)
+		fmt.Println(logMessage)
 
-func galleryHandler(w http.ResponseWriter, r *http.Request) {
-	logRequest(r)
-	gallery := ImageGallery{}
-	images, err := loadImagesFromDirectory("static/gallery")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return err
 	}
-	for _, img := range images {
-		gallery.addImage(img)
-	}
-	templates.Render(w, "gallery.html", gallery)
-}
-
-func serveStaticFolders(mux *http.ServeMux) {
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
-	mux.HandleFunc("/css/", func(w http.ResponseWriter, r *http.Request) {
-		logRequest(r)
-		http.ServeFile(w, r, r.URL.Path[1:])
-	})
 }
 
 func main() {
-	mux := http.NewServeMux()
+	e := echo.New()
 
-	NewTemplateRenderer("views/*.html")
-	mux.HandleFunc("/", indexHandler)
-	mux.HandleFunc("/get-gallery", galleryHandler)
-	serveStaticFolders(mux)
+	e.Pre(middleware.RemoveTrailingSlash())
+	e.Use(middleware.Recover())
+	e.Use(middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(
+		rate.Limit(20),
+	)))
+	e.Use(loggingMiddleware)
 
-	limiter := rate.NewLimiter(50, 1)
+	gallery := ImageGallery{}
 
-	fmt.Println("Server Started!")
-	http.ListenAndServe(":12345", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !limiter.Allow() {
-			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
-			return
-		}
-		mux.ServeHTTP(w, r)
-	}))
+	images, err := loadImagesFromDirectory("static/gallery/")
+	if err != nil {
+		e.Logger.Fatal(err)
+	}
+
+	for _, img := range images {
+		gallery.addImage(img)
+	}
+
+	NewTemplateRenderer(e, "views/*.html")
+	e.Static("/static", "static")
+	e.Static("/css", "css")
+
+	e.GET("/", func(c echo.Context) error {
+		return c.Render(http.StatusOK, "index", nil)
+	})
+
+	e.GET("/get-gallery", func(c echo.Context) error {
+		return c.Render(http.StatusOK, "gallery", gallery)
+	})
+
+	e.Logger.Fatal(e.Start(":12345"))
 }
