@@ -5,5 +5,5 @@ The gallery contains only images coming from `Frieren`(popular fantasy manga/ani
 
 ### Technologies used:
 - Golang
-  - API Server: `net/http`
+  - API Server: `echo`
   - Templates Processing: `html/templates`
