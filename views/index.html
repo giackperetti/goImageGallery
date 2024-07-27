@@ -10,7 +10,7 @@
   <title>Frieren Image Gallery</title>
   <script>
     document.addEventListener("DOMContentLoaded", function () {
-      fetch('/get-gallery')
+      fetch('/gallery')
         .then(response => response.text())
         .then(html => {
           document.getElementById('gallery-container').innerHTML = html;

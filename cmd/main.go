@@ -110,7 +110,7 @@ func main() {
 		return c.Render(http.StatusOK, "index", nil)
 	})
 
-	e.GET("/get-gallery", func(c echo.Context) error {
+	e.GET("/gallery", func(c echo.Context) error {
 		return c.Render(http.StatusOK, "gallery", gallery)
 	})
 
